@@ -62,14 +62,14 @@ if user_input := st.chat_input("Ask a question, troubleshoot a build, or explore
         full_response = ""
         
         response_stream = client.models.generate_content_stream(
-            model = "gemini-3.8-flash",
+            model="gemini-3.8-flash",
             contents=api_contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.4,
-            )
+                tools=[{"google_search": {}}],  # <--- THIS ENABLES LIVE GOOGLE SEARCH!
+            ),
         )
-
         for chunk in response_stream:
             if chunk.text:
                 full_response += chunk.text
