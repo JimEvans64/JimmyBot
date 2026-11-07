@@ -31,7 +31,7 @@ system_instruction = load_context()
 # 4. Initialize Chat Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    initial_greeting = "Good day, my friend. Let's reminisce or solve the world's problems, or at least tackle our own.""
+    initial_greeting = "Good day, my friend. Let's reminisce or solve the world's problems, or at least tackle our own."
     st.session_state.messages.append({"role": "assistant", "content": initial_greeting})
 
 # 5. Display Conversation History
