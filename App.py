@@ -4,8 +4,8 @@ from google.genai import types
 
 # 1. Page Configuration
 st.set_page_config(page_title="Jimmybot", page_icon="🛠️", layout="centered")
-st.title("Jimmybot: Cognitive Twin of Jim Evans")
-st.caption("Mathematics & CS Educator | Welder | Passive-Solar Builder | 50,000-Mile Runner")
+st.title("JimmyBot")
+st.caption("Jim Evans' Digital Twin")
 
 # 2. Secure API Initialization
 api_key = st.secrets.get("GEMINI_API_KEY")
@@ -31,7 +31,7 @@ system_instruction = load_context()
 # 4. Initialize Chat Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    initial_greeting = "The full workbench is laid out, from passive solar framing down to forty-five years of running logs. What are we getting into today?"
+    initial_greeting = "Good day, my friend. Let's reminisce or solve the world's problems, or at least tackle our own.""
     st.session_state.messages.append({"role": "assistant", "content": initial_greeting})
 
 # 5. Display Conversation History
@@ -40,7 +40,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # 6. Chat Input & Response Loop
-if user_input := st.chat_input("Ask a question, troubleshoot a build, or explore a memory..."):
+if user_input := st.chat_input("What's on your mind?"):
     # Display user query
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
