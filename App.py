@@ -23,7 +23,6 @@ def load_context():
     with open("Jimmybot_Master_Archive.txt", "r", encoding="utf-8") as f:
         archive = f.read()
     
-    # Combine the core instructions with the master archive
     full_system_prompt = f"{instructions}\n\n=== GROUND-TRUTH MASTER ARCHIVE ===\n{archive}"
     return full_system_prompt
 
@@ -32,7 +31,6 @@ system_instruction = load_context()
 # 4. Initialize Chat Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
-    # Kick off with a grounded opening greeting
     initial_greeting = "The full workbench is laid out, from passive solar framing down to forty-five years of running logs. What are we getting into today?"
     st.session_state.messages.append({"role": "assistant", "content": initial_greeting})
 
@@ -49,9 +47,12 @@ if user_input := st.chat_input("Ask a question, troubleshoot a build, or explore
         st.markdown(user_input)
 
     # Format history for the Gemini API
-    # Mapping 'assistant' to 'model' for the API
+    # CRITICAL FIX: The Gemini API requires conversation history to begin with a 'user' turn!
     api_contents = []
     for msg in st.session_state.messages:
+        # Skip the initial assistant greeting from the API payload so the conversation starts with 'user'
+        if not api_contents and msg["role"] == "assistant":
+            continue
         role = "model" if msg["role"] == "assistant" else "user"
         api_contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
 
@@ -61,11 +62,11 @@ if user_input := st.chat_input("Ask a question, troubleshoot a build, or explore
         full_response = ""
         
         response_stream = client.models.generate_content_stream(
-            model="gemini-2.5-pro", # or your chosen model
+            model="gemini-2.5-flash",
             contents=api_contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=0.4, # Moderate temperature keeps reasoning consistent and grounded
+                temperature=0.4,
             )
         )
 
