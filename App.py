@@ -1,95 +1,197 @@
+from datetime import datetime
+import os
+import re
+from typing import Optional
+from elevenlabs.client import ElevenLabs
+import google.generativeai as genai
 import streamlit as st
-from google import genai
-from google.genai import types
 
-# 1. Page Configuration (Browser Tab)
-st.set_page_config(page_title="JimmyBot", page_icon="🛠️", layout="centered")
+# ==========================================
+# 1. API CONFIGURATION
+# ==========================================
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+ELEVENLABS_API_KEY = st.secrets["ELEVENLABS_API_KEY"]
+VOICE_ID = "4ezS5THHJxyoqIHUs9q7"
 
-# 2. On-Screen Header
-st.title("JimmyBot")
-st.caption("Jim Evans' Digital Twin")
+# Initialize APIs
+client = genai.Client(api_key=GEMINI_API_KEY)
+eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
-# 3. Secure API Initialization
-api_key = st.secrets.get("GEMINI_API_KEY")
-if not api_key:
-    st.error("API Key not found. Please set GEMINI_API_KEY in Streamlit Secrets.")
-    st.stop()
+# ==========================================
+# 2. PYTHON TOOLS (DETERMINISTIC CALCULATORS)
+# ==========================================
+def calculate_lift_metrics(
+    weight: float,
+    reps: Optional[int] = None,
+    orm: Optional[float] = None,
+    bodyweight: Optional[float] = None,
+    is_bodyweight_lift: bool = False,
+) -> dict:
+  """Calculates One-Rep Max (ORM) or expected reps for a given lift.
 
-client = genai.Client(api_key=api_key)
+  Args:
+      weight: External barbell weight lifted or added dip-belt weight (in lbs).
+      reps: Number of repetitions performed (provide this to calculate ORM).
+      orm: Known total One-Rep Max (provide this to calculate expected reps).
+      bodyweight: The lifter's bodyweight in lbs (REQUIRED if is_bodyweight_lift
+        is True).
+      is_bodyweight_lift: Set to True for pullups, chin-ups, or dips; False for
+        barbell/machine lifts.
+  """
+  if is_bodyweight_lift and (bodyweight is None or bodyweight <= 0):
+    return {
+        'error': (
+            'Missing lifter bodyweight. Ask the user for their current'
+            ' bodyweight before calculating.'
+        )
+    }
 
-# 4. Load System Instructions, Photo Directory, and Master Archive
-@st.cache_data
-def load_context():
-    with open("system_instructions.txt", "r", encoding="utf-8") as f:
-        instructions = f.read()
-    with open("photos.txt", "r", encoding="utf-8") as f:
-        photos = f.read()
-    with open("jimmybot_master_archive.txt", "r", encoding="utf-8") as f:
-        archive = f.read()
-    
-    full_system_prompt = (
-        f"{instructions}\n\n"
-        f"=== PHOTO DIRECTORY ===\n{photos}\n\n"
-        f"=== GROUND-TRUTH MASTER ARCHIVE ===\n{archive}"
-    )
-    return full_system_prompt
+  bw = bodyweight if (is_bodyweight_lift and bodyweight is not None) else 0.0
+  total_load = weight + bw
 
-system_instruction = load_context()
-# 5. Initialize Chat Session State & Sidebar Controls
-initial_greeting = "Good day, my friend. Let's reminisce or solve the world's problems, or at least tackle our own. Shoot."
+  if reps is not None:
+    total_orm = ((reps / 3.0) * (total_load / 10.0)) + total_load
+    result = {'total_orm': round(total_orm, 2)}
+    if bw > 0:
+      result['max_added_weight'] = round(total_orm - bw, 2)
+    return result
 
-# Sidebar for controls
-with st.sidebar:
-    st.markdown("### Controls")
-    if st.button("🧹 Clear Conversation", use_container_width=True):
-        st.session_state.messages = []
-        st.rerun()
+  if orm is not None and total_load > 0:
+    expected_reps = (30.0 * (orm - total_load)) / total_load
+    return {'expected_reps': round(expected_reps, 2)}
 
-# Ensure session state always starts with the initial greeting
-if not st.session_state.get("messages"):
-    st.session_state.messages = [{"role": "assistant", "content": initial_greeting}]
+  return {
+      'error': 'Provide either reps (to find ORM) or orm (to find expected reps).'
+  }
 
-# 6. Display Conversation History
+
+# ==========================================
+# 3. HELPER FUNCTIONS & ARCHIVE LOADING
+# ==========================================
+def clean_for_speech(text):
+  # Converts markdown links like [View Photo: Our Solar Home](http...) into just "Our Solar Home"
+  clean = re.sub(
+      r'\[(?:View Photo:\s*)?([^\]]+)\]\(https?://[^\)]+\)', r'\1', text
+  )
+  # Removes any standalone raw web links (http://... or https://...)
+  clean = re.sub(r'https?://\S+', '', clean)
+  # Cleans up bullet asterisks so it doesn't say "asterisk" out loud
+  clean = clean.replace('*', '')
+  return clean.strip()
+
+
+def load_text_file(filename):
+  if os.path.exists(filename):
+    with open(filename, 'r', encoding='utf-8') as f:
+      return f.read()
+  return ''
+
+
+# Read the local system instructions, archive, and photo directory
+system_instructions_content = load_text_file('system_instructions.txt')
+archive_content = load_text_file('jimmybot_master_archive.txt')
+photos_content = load_text_file('photos.txt')
+
+# Fallback core identity if system_instructions.txt is missing
+if not system_instructions_content:
+  system_instructions_content = (
+      'You are Jimmybot, the authentic digital avatar and cognitive twin of '
+      'James "Jim" S. Evans (b. July 12, 1948, Springfield, Missouri).'
+  )
+
+# Assemble Complete Master System Prompt
+MASTER_SYSTEM_PROMPT = f"""
+{system_instructions_content}
+
+=== PHOTO DIRECTORY ===
+{photos_content}
+
+=== MASTER BIOGRAPHICAL & BUILD ARCHIVE ===
+{archive_content}
+"""
+
+# Configure Gemini with the complete Jimmybot context and Python calculator tool
+model = genai.GenerativeModel(
+    model_name='gemini-3.8-flash',
+    system_instruction=MASTER_SYSTEM_PROMPT,
+    tools=[calculate_lift_metrics],
+)
+
+# ==========================================
+# 4. STREAMLIT USER INTERFACE
+# ==========================================
+st.set_page_config(page_title='Jimmybot Voice', page_icon='🎙️')
+st.title('🎙️ Jimmybot: Voice Interface')
+st.caption(
+    'Ask Jim a question and hear the response spoken in his authentic cloned'
+    ' voice.'
+)
+
+# Check if master files were loaded
+if not os.path.exists('system_instructions.txt'):
+  st.warning(
+      "⚠️ Warning: 'system_instructions.txt' not found in this folder."
+      ' Running with fallback persona.'
+  )
+
+if not archive_content:
+  st.warning(
+      "⚠️ Warning: 'jimmybot_master_archive.txt' not found in this folder."
+      ' Jimmybot is running with basic memory.'
+  )
+
+# Maintain conversation session state & Gemini chat session (required for automatic tool calling)
+if 'messages' not in st.session_state:
+  st.session_state.messages = []
+
+if 'chat_session' not in st.session_state:
+  st.session_state.chat_session = model.start_chat(
+      enable_automatic_function_calling=True
+  )
+
+# Display previous chat messages
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+  with st.chat_message(message['role']):
+    st.markdown(message['content'])
 
-# 7. Chat Input & Response Loop
-if user_input := st.chat_input("Ask a question, troubleshoot a build, or explore a memory..."):
-    # Display user query
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user"):
-        st.markdown(user_input)
+# Pinned Bottom Bar: Keeps the voice toggle visible right above the chat input at all times
+with st.bottom:
+  voice_enabled = st.toggle('🔊 Cloned Voice Output', value=False)
+  user_input = st.chat_input('Ask Jim about builds, history, or philosophy...')
 
-    # Format history for the Gemini API (Must start with a 'user' turn)
-    api_contents = []
-    for msg in st.session_state.messages:
-        if not api_contents and msg["role"] == "assistant":
-            continue  # Skip initial UI greeting from the API payload
-        role = "model" if msg["role"] == "assistant" else "user"
-        api_contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg["content"])]))
+if user_input:
+  # 1. Display user message
+  st.session_state.messages.append({'role': 'user', 'content': user_input})
+  with st.chat_message('user'):
+    st.markdown(user_input)
 
-    # Generate Streamed Response
-    with st.chat_message("assistant"):
-        response_placeholder = st.empty()
-        full_response = ""
-        
-        response_stream = client.models.generate_content_stream(
-            model="gemini-3.8-flash",
-            contents=api_contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.5, # Balanced for wit, warmth, and precision
-                tools=[{"google_search": {}}], # Live search grounding for current events
-            )
+  # 2. Grab live local date & time from your PC clock and pass it to Gemini
+  current_time_str = datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')
+  prompt_with_time = (
+      f'[Current local date and time in Springfield, MO: {current_time_str}]\n\n'
+      f'User question: {user_input}'
+  )
+
+  # 3. Generate Jimmybot Text Response via Gemini (automatically invokes calculate_lift_metrics when needed)
+  with st.chat_message('assistant'):
+    with st.spinner('Thinking...'):
+      response = st.session_state.chat_session.send_message(prompt_with_time)
+      bot_text = response.text
+      st.markdown(bot_text)
+
+    # 4. Generate Cloned Voice ONLY if the toggle is switched ON
+    if voice_enabled:
+      with st.spinner('Generating voice...'):
+        spoken_text = clean_for_speech(bot_text)
+
+        audio_generator = eleven_client.text_to_speech.convert(
+            text=spoken_text,
+            voice_id=VOICE_ID,
+            model_id='eleven_multilingual_v2',
         )
 
-        for chunk in response_stream:
-            if chunk.text:
-                full_response += chunk.text
-                response_placeholder.markdown(full_response + "▌")
-        
-        response_placeholder.markdown(full_response)
+        audio_bytes = b''.join(audio_generator)
+        st.audio(audio_bytes, format='audio/mp3', autoplay=True)
 
-    # Save assistant response to session state
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+  # Store assistant message in history
+  st.session_state.messages.append({'role': 'assistant', 'content': bot_text})
