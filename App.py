@@ -115,6 +115,7 @@ GEMINI_CONFIG = types.GenerateContentConfig(
         calculate_lift_metrics,
         {"google_search": {}},
     ],
+    tool_config=types.ToolConfig(include_server_side_tool_invocations=True),
 )
 
 # ==========================================
