@@ -1,0 +1,47 @@
+name: Keep Jimmybot Awake
+
+on:
+  schedule:
+    # Runs every 8 hours (00:00, 08:00, and 16:00 UTC)
+    - cron: "0 */8 * * *"
+  workflow_dispatch: # Adds a manual "Run workflow" button on GitHub
+
+jobs:
+  wake-up:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Playwright & Chromium
+        run: |
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Visit Jimmybot & Wake If Asleep
+        run: |
+          python - << 'EOF'
+          from playwright.sync_api import sync_playwright
+
+          URL = "https://jimmybot-ldkcbday8zxglzagmxuzej.streamlit.app/"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+              page.goto(URL, timeout=60000)
+              page.wait_for_timeout(8000)
+
+              wake_btn = page.get_by_role("button", name="Yes, get this app back up!")
+              if wake_btn.is_visible():
+                  print("Jimmybot is asleep — clicking wake button...")
+                  wake_btn.click()
+                  page.wait_for_selector('[data-testid="stAppViewContainer"]', timeout=120000)
+                  print("Jimmybot woke up successfully.")
+              else:
+                  print("Jimmybot is already awake and active.")
+
+              page.wait_for_timeout(5000)
+              browser.close()
+          EOF
