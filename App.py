@@ -151,7 +151,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-with st.bottom():
+with st.bottom:
     voice_enabled = st.toggle("🔊 Cloned Voice Output", value=False)
     user_input = st.chat_input("Ask Jim about builds, history, or philosophy...")
 
